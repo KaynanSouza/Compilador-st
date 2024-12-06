@@ -1,0 +1,3 @@
+/home/kaynan/Documentos/desenvolvimento/c++/Compilador-st/cmake-build-debug/CMakeFiles/Compilador_st.dir
+/home/kaynan/Documentos/desenvolvimento/c++/Compilador-st/cmake-build-debug/CMakeFiles/edit_cache.dir
+/home/kaynan/Documentos/desenvolvimento/c++/Compilador-st/cmake-build-debug/CMakeFiles/rebuild_cache.dir
