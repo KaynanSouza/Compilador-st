@@ -4,10 +4,9 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
+#include <stdexcept>
 
-// Enumeração que define todos os tipos possíveis de tokens na linguagem ST
 enum TokenId {
-    // Palavras-chave
     TOK_VAR,
     TOK_END_VAR,
     TOK_IF,
@@ -23,58 +22,58 @@ enum TokenId {
     TOK_FUNCTION,
     TOK_END_FUNCTION,
     TOK_OF,
+    TOK_PROGRAM,
+    TOK_END_PROGRAM,
+    TOK_TRUE,
+    TOK_FALSE,
+    TOK_END_STRUCT,
 
-    // Operadores e símbolos
-    TOK_LPAREN,       // (
-    TOK_RPAREN,       // )
-    TOK_LBRACKET,     // [
-    TOK_RBRACKET,     // ]
-    TOK_IGUAL,        // =
-    TOK_ATRIBUICAO,   // :=
-    TOK_COLON,        // :
-    TOK_SEMICOLON,    // ;
-    TOK_COMMA,        // ,
-    TOK_DOT_DOT,      // ..
+    TOK_LPAREN,
+    TOK_RPAREN,
+    TOK_LBRACKET,
+    TOK_RBRACKET,
+    TOK_IGUAL,
+    TOK_ATRIBUICAO,
+    TOK_COLON,
+    TOK_SEMICOLON,
+    TOK_COMMA,
+    TOK_DOT_DOT,
 
-    // Operadores aritméticos
-    TOK_PLUS,         // +
-    TOK_MINUS,        // -
-    TOK_MULTIPLY,     // *
-    TOK_DIVIDE,       // /
-    TOK_MOD,          // MOD
+    TOK_PLUS,
+    TOK_MINUS,
+    TOK_MULTIPLY,
+    TOK_DIVIDE,
+    TOK_MOD,
 
-    // Operadores relacionais
-    TOK_DIFERENTE,    // <>
-    TOK_MAIOR,        // >
-    TOK_MENOR,        // <
-    TOK_MAIOR_IGUAL,  // >=
-    TOK_MENOR_IGUAL,  // <=
+    TOK_DIFERENTE,
+    TOK_MAIOR,
+    TOK_MENOR,
+    TOK_MAIOR_IGUAL,
+    TOK_MENOR_IGUAL,
 
-    // Operadores lógicos
     TOK_AND,
     TOK_OR,
     TOK_NOT,
     TOK_XOR,
 
-    // Literais e identificadores
     TOK_INT_LITERAL,
     TOK_REAL_LITERAL,
     TOK_STRING_LITERAL,
     TOK_IDENTIFIER,
 
-    // Comentários, Fim de arquivo, Inválido
     TOK_COMMENT,
     TOK_EOF,
     TOK_INVALID,
 };
 
-// Classe representando um Token
 class Token {
 public:
     TokenId id;
     std::string value;
     int line;
     int column;
+
+    Token() : id(TOK_INVALID), value(""), line(0), column(0) {}
 
     Token(TokenId id, std::string value, int line, int column)
         : id(id), value(value), line(line), column(column) {}
@@ -85,7 +84,6 @@ public:
     }
 };
 
-// Classe Lexer: Responsável pela análise léxica do código fonte
 class Lexer {
 private:
     std::string input;
@@ -110,28 +108,26 @@ private:
     }
 
     void skip_whitespace() {
-        while (isspace(peek())) advance();
+        while (isspace((unsigned char)peek())) advance();
     }
 
     void skip_comment() {
-        // Consome '(*'
         advance();
         advance();
-        while (peek() != '*' || input[pos + 1] != ')') {
+        while (peek() != '*' || input.size() <= pos+1 || input[pos+1] != ')') {
             if (peek() == '\0') {
                 std::cerr << "Unterminated comment on line " << current_line << "\n";
                 return;
             }
             advance();
         }
-        // Consome '*)'
         advance();
         advance();
     }
 
     std::string parse_identifier() {
         std::string ident;
-        while (isalnum(peek()) || peek() == '_') {
+        while (isalnum((unsigned char)peek()) || peek() == '_') {
             ident += advance();
         }
         return ident;
@@ -148,7 +144,10 @@ private:
             {"AND", TOK_AND}, {"OR", TOK_OR},
             {"NOT", TOK_NOT}, {"XOR", TOK_XOR},
             {"FUNCTION", TOK_FUNCTION}, {"END_FUNCTION", TOK_END_FUNCTION},
-            {"OF", TOK_OF}, {"MOD", TOK_MOD}
+            {"OF", TOK_OF}, {"MOD", TOK_MOD},
+            {"PROGRAM", TOK_PROGRAM}, {"END_PROGRAM", TOK_END_PROGRAM},
+            {"TRUE", TOK_TRUE}, {"FALSE", TOK_FALSE},
+            {"END_STRUCT", TOK_END_STRUCT}
         };
         auto it = keywords.find(ident);
         return it != keywords.end() ? it->second : TOK_IDENTIFIER;
@@ -157,8 +156,7 @@ private:
     Token parse_number() {
         std::string num;
         bool is_real = false;
-
-        while (isdigit(peek()) || peek() == '.') {
+        while (isdigit((unsigned char)peek()) || peek() == '.') {
             if (peek() == '.') {
                 if (is_real) break;
                 is_real = true;
@@ -171,7 +169,7 @@ private:
     }
 
     Token parse_string() {
-        advance(); // Skip "
+        advance();
         std::string str;
         while (peek() != '"' && peek() != '\0') {
             str += advance();
@@ -186,13 +184,11 @@ private:
     }
 
     Token parse_range_or_dot() {
-        // Quando encontramos um '.', precisamos verificar se é o operador de intervalo '..'
-        advance(); // consome o primeiro '.'
+        advance();
         if (peek() == '.') {
-            advance(); // consome o segundo '.'
+            advance();
             return Token(TOK_DOT_DOT, "..", current_line, current_column);
         } else {
-            // Se não for '..', pode ser um erro ou um simples ponto
             return Token(TOK_INVALID, ".", current_line, current_column);
         }
     }
@@ -205,30 +201,25 @@ public:
 
         if (peek() == '\0') return Token(TOK_EOF, "EOF", current_line, current_column);
 
-        // Comentário
         if (peek() == '(' && input.size() > pos+1 && input[pos+1] == '*') {
             skip_comment();
             return next_token();
         }
 
-        // Identificadores e palavras-chave
-        if (isalpha(peek()) || peek() == '_') {
+        if (isalpha((unsigned char)peek()) || peek() == '_') {
             std::string ident = parse_identifier();
             TokenId id = classify_keyword(ident);
             return Token(id, ident, current_line, current_column);
         }
 
-        // Números
-        if (isdigit(peek())) {
+        if (isdigit((unsigned char)peek())) {
             return parse_number();
         }
 
-        // Strings
         if (peek() == '"') {
             return parse_string();
         }
 
-        // Operadores e símbolos
         switch (peek()) {
             case '+': advance(); return Token(TOK_PLUS, "+", current_line, current_column);
             case '-': advance(); return Token(TOK_MINUS, "-", current_line, current_column);
@@ -237,7 +228,6 @@ public:
             case '[': advance(); return Token(TOK_LBRACKET, "[", current_line, current_column);
             case ']': advance(); return Token(TOK_RBRACKET, "]", current_line, current_column);
             case '.':
-                // Verificar se é '..'
                 return parse_range_or_dot();
             case ':':
                 advance();
@@ -282,29 +272,248 @@ public:
     }
 };
 
+void parser_error(const Token &tok, const std::string &msg) {
+    std::cerr << "Erro de sintaxe na linha " << tok.line << ", coluna " << tok.column
+              << ": " << msg << " (encontrado: " << tok.value << ")\n";
+    throw std::runtime_error("Erro de sintaxe.");
+}
+
+class Parser {
+private:
+    Lexer &lexer;
+    Token current_token;
+
+    void advance() {
+        current_token = lexer.next_token();
+    }
+
+    void expect(TokenId expected) {
+        if (current_token.id == expected) {
+            advance();
+        } else {
+            parser_error(current_token, "Token esperado não encontrado");
+        }
+    }
+
+    bool check(TokenId id) {
+        return current_token.id == id;
+    }
+
+    void parseProgram() {
+        expect(TOK_PROGRAM);
+        expect(TOK_IDENTIFIER); // nome do programa
+        while (isVarBlockStart()) {
+            parseVarBlock();
+        }
+
+        parseInstructions();
+        expect(TOK_END_PROGRAM);
+    }
+
+    bool isVarBlockStart() {
+        return check(TOK_VAR);
+    }
+
+    void parseVarBlock() {
+        expect(TOK_VAR);
+        while (isVarDeclarationStart()) {
+            parseVarDeclaration();
+        }
+        expect(TOK_END_VAR);
+    }
+
+    bool isVarDeclarationStart() {
+        return check(TOK_IDENTIFIER);
+    }
+
+    void parseVarDeclaration() {
+        expect(TOK_IDENTIFIER);
+        expect(TOK_COLON);
+        parseType();
+
+        if (check(TOK_ATRIBUICAO)) {
+            advance();
+            parseValue();
+        }
+
+        expect(TOK_SEMICOLON);
+    }
+
+    void parseType() {
+        if (check(TOK_BOOL) || check(TOK_INT) || check(TOK_REAL) || check(TOK_STRING)) {
+            advance();
+        } else if (check(TOK_ARRAY)) {
+            advance();
+            expect(TOK_LBRACKET);
+            parseNumber();
+            expect(TOK_DOT_DOT);
+            parseNumber();
+            expect(TOK_RBRACKET);
+            expect(TOK_OF);
+            parseType();
+        } else if (check(TOK_STRUCT)) {
+            advance();
+            while (check(TOK_IDENTIFIER)) {
+                parseStructDeclaration();
+            }
+            expect(TOK_END_STRUCT);
+        } else {
+            parser_error(current_token, "Tipo inválido");
+        }
+    }
+
+    void parseStructDeclaration() {
+        expect(TOK_IDENTIFIER);
+        expect(TOK_COLON);
+        parseType();
+        expect(TOK_SEMICOLON);
+    }
+
+    void parseValue() {
+        if (check(TOK_INT_LITERAL) || check(TOK_REAL_LITERAL) || check(TOK_STRING_LITERAL)) {
+            advance();
+        } else if (check(TOK_TRUE) || check(TOK_FALSE)) {
+            advance();
+        } else {
+            parser_error(current_token, "Valor inválido na atribuição");
+        }
+    }
+
+    void parseNumber() {
+        if (check(TOK_INT_LITERAL)) {
+            advance();
+        } else if (check(TOK_REAL_LITERAL)) {
+            advance();
+        } else {
+            parser_error(current_token, "Número esperado");
+        }
+    }
+
+    void parseInstructions() {
+        while (isInstructionStart()) {
+            parseInstruction();
+        }
+    }
+
+    bool isInstructionStart() {
+        return check(TOK_IDENTIFIER) || check(TOK_IF);
+    }
+
+    void parseInstruction() {
+        if (check(TOK_IDENTIFIER)) {
+            parseAssignment();
+        } else if (check(TOK_IF)) {
+            parseIfStatement();
+        } else {
+            parser_error(current_token, "Instrução inválida");
+        }
+    }
+
+    void parseAssignment() {
+        expect(TOK_IDENTIFIER);
+        expect(TOK_ATRIBUICAO);
+        parseExpression();
+        expect(TOK_SEMICOLON);
+    }
+
+    void parseExpression() {
+        parseTerm();
+        while (check(TOK_PLUS) || check(TOK_MINUS)) {
+            advance();
+            parseTerm();
+        }
+    }
+
+    void parseTerm() {
+        parseFactor();
+        while (check(TOK_MULTIPLY) || check(TOK_DIVIDE) || check(TOK_MOD)) {
+            advance();
+            parseFactor();
+        }
+    }
+
+    void parseFactor() {
+        if (check(TOK_LPAREN)) {
+            advance();
+            parseExpression();
+            expect(TOK_RPAREN);
+        } else if (check(TOK_IDENTIFIER)) {
+            advance();
+        } else if (check(TOK_INT_LITERAL) || check(TOK_REAL_LITERAL)) {
+            advance();
+        } else {
+            parser_error(current_token, "Fator inválido");
+        }
+    }
+
+    void parseIfStatement() {
+        expect(TOK_IF);
+        parseCondition();
+        expect(TOK_THEN);
+        parseInstructions();
+
+        if (check(TOK_ELSE)) {
+            advance();
+            parseInstructions();
+        }
+
+        expect(TOK_END_IF);
+    }
+
+    void parseCondition() {
+        parseExpression();
+        parseRelationalOperator();
+        parseExpression();
+    }
+
+    void parseRelationalOperator() {
+        if (check(TOK_IGUAL) || check(TOK_DIFERENTE) || check(TOK_MENOR) || check(TOK_MENOR_IGUAL) || check(TOK_MAIOR) || check(TOK_MAIOR_IGUAL)) {
+            advance();
+        } else {
+            parser_error(current_token, "Operador relacional esperado");
+        }
+    }
+
+public:
+    Parser(Lexer &l) : lexer(l) {
+        current_token = lexer.next_token();
+    }
+
+    void parse() {
+        parseProgram();
+        if (current_token.id != TOK_EOF) {
+            parser_error(current_token, "Tokens extras após fim do programa");
+        }
+    }
+};
+
 int main() {
-    // Exemplo de código ST com FUNCTION, ARRAY, OF, etc.
+    // Código ST corrigido: remover o ';' após o nome do programa
     std::string code = R"(
-        FUNCTION VAZAO : REAL
-          VAR_INPUT
-            IN1 : REAL;  (* ALTURA *)
-            IN2 : REAL;  (* POTENCIA *)
-            IN3 : ARRAY[0..3100] OF REAL; (* TABELA *)
-          END_VAR
-          VAR
-            H1,H2,P1,P2: REAL;
-            I,J: INT;
-            B : BOOL;
-          END_VAR
-        END_FUNCTION
+        PROGRAM MyProg
+        VAR
+
+          x : INT;
+          in: ARRAY[1..10] OF INT;
+
+        END_VAR
+
+        x := 10;
+        IF x < 20   THEN
+          x := x + 1;
+        END_IF
+
+        END_PROGRAM
     )";
 
     Lexer lexer(code);
-    Token token = lexer.next_token();
+    Parser parser(lexer);
 
-    while (token.id != TOK_EOF) {
-        std::cout << token.to_string() << "\n";
-        token = lexer.next_token();
+    try {
+        parser.parse();
+        std::cout << "Parsing concluído com sucesso!\n";
+    } catch (const std::exception &e) {
+        std::cerr << "Falha na análise sintática: " << e.what() << "\n";
     }
 
     return 0;
