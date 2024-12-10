@@ -7,6 +7,7 @@
 #include <stdexcept>
 
 enum TokenId {
+    // Palavras-chave
     TOK_VAR,
     TOK_END_VAR,
     TOK_IF,
@@ -28,6 +29,7 @@ enum TokenId {
     TOK_FALSE,
     TOK_END_STRUCT,
 
+    // Operadores e símbolos
     TOK_LPAREN,
     TOK_RPAREN,
     TOK_LBRACKET,
@@ -39,28 +41,33 @@ enum TokenId {
     TOK_COMMA,
     TOK_DOT_DOT,
 
+    // Operadores aritméticos
     TOK_PLUS,
     TOK_MINUS,
     TOK_MULTIPLY,
     TOK_DIVIDE,
     TOK_MOD,
 
+    // Operadores relacionais
     TOK_DIFERENTE,
     TOK_MAIOR,
     TOK_MENOR,
     TOK_MAIOR_IGUAL,
     TOK_MENOR_IGUAL,
 
+    // Operadores lógicos
     TOK_AND,
     TOK_OR,
     TOK_NOT,
     TOK_XOR,
 
+    // Literais e identificadores
     TOK_INT_LITERAL,
     TOK_REAL_LITERAL,
     TOK_STRING_LITERAL,
     TOK_IDENTIFIER,
 
+    // Comentários, Fim de arquivo, Inválido
     TOK_COMMENT,
     TOK_EOF,
     TOK_INVALID,
@@ -74,7 +81,6 @@ public:
     int column;
 
     Token() : id(TOK_INVALID), value(""), line(0), column(0) {}
-
     Token(TokenId id, std::string value, int line, int column)
         : id(id), value(value), line(line), column(column) {}
 
@@ -112,17 +118,17 @@ private:
     }
 
     void skip_comment() {
-        advance();
-        advance();
-        while (peek() != '*' || input.size() <= pos+1 || input[pos+1] != ')') {
+        advance(); // '('
+        advance(); // '*'
+        while (peek() != '*' || pos+1 >= input.size() || input[pos+1] != ')') {
             if (peek() == '\0') {
                 std::cerr << "Unterminated comment on line " << current_line << "\n";
                 return;
             }
             advance();
         }
-        advance();
-        advance();
+        advance(); // '*'
+        advance(); // ')'
     }
 
     std::string parse_identifier() {
@@ -158,18 +164,20 @@ private:
         bool is_real = false;
         while (isdigit((unsigned char)peek()) || peek() == '.') {
             if (peek() == '.') {
+                // Se for '..' não faz parte do número
+                if (pos+1 < input.size() && input[pos+1] == '.')
+                    break;
                 if (is_real) break;
                 is_real = true;
             }
             num += advance();
         }
-
         return is_real ? Token(TOK_REAL_LITERAL, num, current_line, current_column)
                        : Token(TOK_INT_LITERAL, num, current_line, current_column);
     }
 
     Token parse_string() {
-        advance();
+        advance(); // skip "
         std::string str;
         while (peek() != '"' && peek() != '\0') {
             str += advance();
@@ -184,7 +192,7 @@ private:
     }
 
     Token parse_range_or_dot() {
-        advance();
+        advance(); // '.'
         if (peek() == '.') {
             advance();
             return Token(TOK_DOT_DOT, "..", current_line, current_column);
@@ -201,7 +209,7 @@ public:
 
         if (peek() == '\0') return Token(TOK_EOF, "EOF", current_line, current_column);
 
-        if (peek() == '(' && input.size() > pos+1 && input[pos+1] == '*') {
+        if (peek() == '(' && pos+1 < input.size() && input[pos+1] == '*') {
             skip_comment();
             return next_token();
         }
@@ -270,13 +278,10 @@ public:
             }
         }
     }
-};
 
-void parser_error(const Token &tok, const std::string &msg) {
-    std::cerr << "Erro de sintaxe na linha " << tok.line << ", coluna " << tok.column
-              << ": " << msg << " (encontrado: " << tok.value << ")\n";
-    throw std::runtime_error("Erro de sintaxe.");
-}
+    size_t getPos() const { return pos; }
+    const std::string &getInput() const { return input; }
+};
 
 class Parser {
 private:
@@ -285,6 +290,35 @@ private:
 
     void advance() {
         current_token = lexer.next_token();
+    }
+
+    void parser_error(const Token &tok, const std::string &msg) {
+        std::cerr << "Erro de sintaxe na linha " << tok.line << ", coluna " << tok.column
+                  << ": " << msg << " (encontrado: " << tok.value << ")\n";
+
+        const std::string &input = lexer.getInput();
+        size_t pos = lexer.getPos();
+
+        // Encontrar o início da linha
+        size_t line_start = input.rfind('\n', pos);
+        if (line_start == std::string::npos)
+            line_start = 0;
+        else
+            // Remover o +1 para mostrar a linha correta
+            line_start = line_start + 1;
+
+        // Encontrar o fim da linha
+        size_t line_end = input.find('\n', pos);
+        if (line_end == std::string::npos)
+            line_end = input.size();
+
+        std::string line_str = input.substr(line_start, line_end - line_start);
+        std::cerr << line_str << "\n";
+
+        for (int i = 1; i < tok.column; i++) std::cerr << " ";
+        std::cerr << "^\n";
+
+        throw std::runtime_error("Erro de sintaxe.");
     }
 
     void expect(TokenId expected) {
@@ -301,11 +335,10 @@ private:
 
     void parseProgram() {
         expect(TOK_PROGRAM);
-        expect(TOK_IDENTIFIER); // nome do programa
+        expect(TOK_IDENTIFIER);
         while (isVarBlockStart()) {
             parseVarBlock();
         }
-
         parseInstructions();
         expect(TOK_END_PROGRAM);
     }
@@ -380,9 +413,7 @@ private:
     }
 
     void parseNumber() {
-        if (check(TOK_INT_LITERAL)) {
-            advance();
-        } else if (check(TOK_REAL_LITERAL)) {
+        if (check(TOK_INT_LITERAL) || check(TOK_REAL_LITERAL)) {
             advance();
         } else {
             parser_error(current_token, "Número esperado");
@@ -410,7 +441,16 @@ private:
     }
 
     void parseAssignment() {
+        // <assignment> ::= <identifier> { '[' <expression> ']' } := <expression> ';'
         expect(TOK_IDENTIFIER);
+
+        // Suporte a acesso de array após identificador
+        while (check(TOK_LBRACKET)) {
+            advance(); // '['
+            parseExpression();
+            expect(TOK_RBRACKET);
+        }
+
         expect(TOK_ATRIBUICAO);
         parseExpression();
         expect(TOK_SEMICOLON);
@@ -433,12 +473,21 @@ private:
     }
 
     void parseFactor() {
+        // <factor> ::= <identifier> { '[' <expression> ']' } | '(' <expression> ')' | <number> | ...
         if (check(TOK_LPAREN)) {
             advance();
             parseExpression();
             expect(TOK_RPAREN);
         } else if (check(TOK_IDENTIFIER)) {
             advance();
+
+            // Após um identificador, pode haver zero ou mais acessos de array
+            while (check(TOK_LBRACKET)) {
+                advance(); // '['
+                parseExpression();
+                expect(TOK_RBRACKET);
+            }
+
         } else if (check(TOK_INT_LITERAL) || check(TOK_REAL_LITERAL)) {
             advance();
         } else {
@@ -488,19 +537,18 @@ public:
 };
 
 int main() {
-    // Código ST corrigido: remover o ';' após o nome do programa
     std::string code = R"(
         PROGRAM MyProg
         VAR
-
           x : INT;
-          in: ARRAY[1..10] OF INT;
-
+          inputVar : ARRAY[1..100] OF INT;
         END_VAR
 
+        inputVar[1] := 10;
         x := 10;
-        IF x < 20   THEN
+        IF x < 20 THEN
           x := x + 1;
+          inputVar[1] := 10;
         END_IF
 
         END_PROGRAM
