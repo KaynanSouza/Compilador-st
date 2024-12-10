@@ -5,9 +5,22 @@
 #include <unordered_map>
 #include <vector>
 #include <stdexcept>
+#include <fstream>
+
+// Tipos básicos
+enum VarType {
+    TYPE_INT,
+    TYPE_REAL,
+    TYPE_STRING,
+    TYPE_BOOL,
+    TYPE_ARRAY_INT,
+    TYPE_ARRAY_REAL,
+    TYPE_ARRAY_STRING,
+    TYPE_ARRAY_BOOL,
+    TYPE_UNKNOWN
+};
 
 enum TokenId {
-    // Palavras-chave
     TOK_VAR,
     TOK_END_VAR,
     TOK_IF,
@@ -29,7 +42,6 @@ enum TokenId {
     TOK_FALSE,
     TOK_END_STRUCT,
 
-    // Operadores e símbolos
     TOK_LPAREN,
     TOK_RPAREN,
     TOK_LBRACKET,
@@ -41,33 +53,28 @@ enum TokenId {
     TOK_COMMA,
     TOK_DOT_DOT,
 
-    // Operadores aritméticos
     TOK_PLUS,
     TOK_MINUS,
     TOK_MULTIPLY,
     TOK_DIVIDE,
     TOK_MOD,
 
-    // Operadores relacionais
     TOK_DIFERENTE,
     TOK_MAIOR,
     TOK_MENOR,
     TOK_MAIOR_IGUAL,
     TOK_MENOR_IGUAL,
 
-    // Operadores lógicos
     TOK_AND,
     TOK_OR,
     TOK_NOT,
     TOK_XOR,
 
-    // Literais e identificadores
     TOK_INT_LITERAL,
     TOK_REAL_LITERAL,
     TOK_STRING_LITERAL,
     TOK_IDENTIFIER,
 
-    // Comentários, Fim de arquivo, Inválido
     TOK_COMMENT,
     TOK_EOF,
     TOK_INVALID,
@@ -164,9 +171,9 @@ private:
         bool is_real = false;
         while (isdigit((unsigned char)peek()) || peek() == '.') {
             if (peek() == '.') {
-                // Se for '..' não faz parte do número
-                if (pos+1 < input.size() && input[pos+1] == '.')
+                if (pos+1 < input.size() && input[pos+1] == '.') {
                     break;
+                }
                 if (is_real) break;
                 is_real = true;
             }
@@ -283,244 +290,67 @@ public:
     const std::string &getInput() const { return input; }
 };
 
+class SymbolTable {
+private:
+    std::unordered_map<std::string, VarType> table;
+public:
+    void declareVar(const std::string &name, VarType type) {
+        table[name] = type;
+    }
+
+    bool isDeclared(const std::string &name) const {
+        return table.find(name) != table.end();
+    }
+
+    VarType getType(const std::string &name) const {
+        auto it = table.find(name);
+        if (it == table.end()) return TYPE_UNKNOWN;
+        return it->second;
+    }
+};
+
 class Parser {
 private:
     Lexer &lexer;
     Token current_token;
+    SymbolTable symtab;
+    std::vector<std::string> code; // IR
 
-    void advance() {
-        current_token = lexer.next_token();
-    }
+    void parseProgram();
+    void parseVarBlock();
+    bool isVarBlockStart();
+    bool isVarDeclarationStart();
+    void parseVarDeclaration();
+    VarType mapBasicType(TokenId id);
+    VarType parseTypeAndGetVarType();
+    void parseStructDeclaration();
+    void parseValue();
+    void parseNumber();
+    void parseInstructions();
+    bool isInstructionStart();
+    void parseInstruction();
+    void parseAssignment();
+    std::string parseExpressionToIR();
+    std::string parseTermToIR();
+    std::string parseFactorToIR();
+    void parseIfStatement();
+    std::string parseConditionToIR();
+    void parseRelationalOperator();
+    void parseCondition();
+    void parseExpression();
+    void parseTerm();
+    void parseFactor();
+    std::vector<std::pair<std::string,int>> parseArrayInitializer();
+    std::pair<std::string,int> parseInitValue();
 
-    void parser_error(const Token &tok, const std::string &msg) {
-        std::cerr << "Erro de sintaxe na linha " << tok.line << ", coluna " << tok.column
-                  << ": " << msg << " (encontrado: " << tok.value << ")\n";
-
-        const std::string &input = lexer.getInput();
-        size_t pos = lexer.getPos();
-
-        // Encontrar o início da linha
-        size_t line_start = input.rfind('\n', pos);
-        if (line_start == std::string::npos)
-            line_start = 0;
-        else
-            // Remover o +1 para mostrar a linha correta
-            line_start = line_start + 1;
-
-        // Encontrar o fim da linha
-        size_t line_end = input.find('\n', pos);
-        if (line_end == std::string::npos)
-            line_end = input.size();
-
-        std::string line_str = input.substr(line_start, line_end - line_start);
-        std::cerr << line_str << "\n";
-
-        for (int i = 1; i < tok.column; i++) std::cerr << " ";
-        std::cerr << "^\n";
-
-        throw std::runtime_error("Erro de sintaxe.");
-    }
-
-    void expect(TokenId expected) {
-        if (current_token.id == expected) {
-            advance();
-        } else {
-            parser_error(current_token, "Token esperado não encontrado");
-        }
-    }
-
-    bool check(TokenId id) {
-        return current_token.id == id;
-    }
-
-    void parseProgram() {
-        expect(TOK_PROGRAM);
-        expect(TOK_IDENTIFIER);
-        while (isVarBlockStart()) {
-            parseVarBlock();
-        }
-        parseInstructions();
-        expect(TOK_END_PROGRAM);
-    }
-
-    bool isVarBlockStart() {
-        return check(TOK_VAR);
-    }
-
-    void parseVarBlock() {
-        expect(TOK_VAR);
-        while (isVarDeclarationStart()) {
-            parseVarDeclaration();
-        }
-        expect(TOK_END_VAR);
-    }
-
-    bool isVarDeclarationStart() {
-        return check(TOK_IDENTIFIER);
-    }
-
-    void parseVarDeclaration() {
-        expect(TOK_IDENTIFIER);
-        expect(TOK_COLON);
-        parseType();
-
-        if (check(TOK_ATRIBUICAO)) {
-            advance();
-            parseValue();
-        }
-
-        expect(TOK_SEMICOLON);
-    }
-
-    void parseType() {
-        if (check(TOK_BOOL) || check(TOK_INT) || check(TOK_REAL) || check(TOK_STRING)) {
-            advance();
-        } else if (check(TOK_ARRAY)) {
-            advance();
-            expect(TOK_LBRACKET);
-            parseNumber();
-            expect(TOK_DOT_DOT);
-            parseNumber();
-            expect(TOK_RBRACKET);
-            expect(TOK_OF);
-            parseType();
-        } else if (check(TOK_STRUCT)) {
-            advance();
-            while (check(TOK_IDENTIFIER)) {
-                parseStructDeclaration();
-            }
-            expect(TOK_END_STRUCT);
-        } else {
-            parser_error(current_token, "Tipo inválido");
-        }
-    }
-
-    void parseStructDeclaration() {
-        expect(TOK_IDENTIFIER);
-        expect(TOK_COLON);
-        parseType();
-        expect(TOK_SEMICOLON);
-    }
-
-    void parseValue() {
-        if (check(TOK_INT_LITERAL) || check(TOK_REAL_LITERAL) || check(TOK_STRING_LITERAL)) {
-            advance();
-        } else if (check(TOK_TRUE) || check(TOK_FALSE)) {
-            advance();
-        } else {
-            parser_error(current_token, "Valor inválido na atribuição");
-        }
-    }
-
-    void parseNumber() {
-        if (check(TOK_INT_LITERAL) || check(TOK_REAL_LITERAL)) {
-            advance();
-        } else {
-            parser_error(current_token, "Número esperado");
-        }
-    }
-
-    void parseInstructions() {
-        while (isInstructionStart()) {
-            parseInstruction();
-        }
-    }
-
-    bool isInstructionStart() {
-        return check(TOK_IDENTIFIER) || check(TOK_IF);
-    }
-
-    void parseInstruction() {
-        if (check(TOK_IDENTIFIER)) {
-            parseAssignment();
-        } else if (check(TOK_IF)) {
-            parseIfStatement();
-        } else {
-            parser_error(current_token, "Instrução inválida");
-        }
-    }
-
-    void parseAssignment() {
-        // <assignment> ::= <identifier> { '[' <expression> ']' } := <expression> ';'
-        expect(TOK_IDENTIFIER);
-
-        // Suporte a acesso de array após identificador
-        while (check(TOK_LBRACKET)) {
-            advance(); // '['
-            parseExpression();
-            expect(TOK_RBRACKET);
-        }
-
-        expect(TOK_ATRIBUICAO);
-        parseExpression();
-        expect(TOK_SEMICOLON);
-    }
-
-    void parseExpression() {
-        parseTerm();
-        while (check(TOK_PLUS) || check(TOK_MINUS)) {
-            advance();
-            parseTerm();
-        }
-    }
-
-    void parseTerm() {
-        parseFactor();
-        while (check(TOK_MULTIPLY) || check(TOK_DIVIDE) || check(TOK_MOD)) {
-            advance();
-            parseFactor();
-        }
-    }
-
-    void parseFactor() {
-        // <factor> ::= <identifier> { '[' <expression> ']' } | '(' <expression> ')' | <number> | ...
-        if (check(TOK_LPAREN)) {
-            advance();
-            parseExpression();
-            expect(TOK_RPAREN);
-        } else if (check(TOK_IDENTIFIER)) {
-            advance();
-
-            // Após um identificador, pode haver zero ou mais acessos de array
-            while (check(TOK_LBRACKET)) {
-                advance(); // '['
-                parseExpression();
-                expect(TOK_RBRACKET);
-            }
-
-        } else if (check(TOK_INT_LITERAL) || check(TOK_REAL_LITERAL)) {
-            advance();
-        } else {
-            parser_error(current_token, "Fator inválido");
-        }
-    }
-
-    void parseIfStatement() {
-        expect(TOK_IF);
-        parseCondition();
-        expect(TOK_THEN);
-        parseInstructions();
-
-        if (check(TOK_ELSE)) {
-            advance();
-            parseInstructions();
-        }
-
-        expect(TOK_END_IF);
-    }
-
-    void parseCondition() {
-        parseExpression();
-        parseRelationalOperator();
-        parseExpression();
-    }
-
-    void parseRelationalOperator() {
-        if (check(TOK_IGUAL) || check(TOK_DIFERENTE) || check(TOK_MENOR) || check(TOK_MENOR_IGUAL) || check(TOK_MAIOR) || check(TOK_MAIOR_IGUAL)) {
-            advance();
-        } else {
-            parser_error(current_token, "Operador relacional esperado");
-        }
+    void expect(TokenId expected);
+    bool check(TokenId id);
+    void advance();
+    void parser_error(const Token &tok, const std::string &msg);
+    void semantic_error(const Token &tok, const std::string &msg);
+    std::string newTemp() {
+        static int temp_count = 0;
+        return "t" + std::to_string(++temp_count);
     }
 
 public:
@@ -528,40 +358,522 @@ public:
         current_token = lexer.next_token();
     }
 
-    void parse() {
-        parseProgram();
-        if (current_token.id != TOK_EOF) {
-            parser_error(current_token, "Tokens extras após fim do programa");
-        }
-    }
+    void parse();
 };
 
-int main() {
-    std::string code = R"(
-        PROGRAM MyProg
-        VAR
-          x : INT;
-          inputVar : ARRAY[1..100] OF INT;
-        END_VAR
 
-        inputVar[1] := 10;
-        x := 10;
-        IF x < 20 THEN
-          x := x + 1;
-          inputVar[1] := 10;
-        END_IF
 
-        END_PROGRAM
-    )";
+void Parser::advance() {
+    current_token = lexer.next_token();
+}
+
+void Parser::parser_error(const Token &tok, const std::string &msg) {
+    std::cerr << "Erro de sintaxe na linha " << tok.line << ", coluna " << tok.column
+              << ": " << msg << " (encontrado: " << tok.value << ")\n";
+
+    const std::string &input = lexer.getInput();
+    size_t pos = lexer.getPos();
+
+    size_t line_start = input.rfind('\n', pos);
+    if (line_start == std::string::npos)
+        line_start = 0;
+    else
+        line_start = line_start + 1;
+
+    size_t line_end = input.find('\n', pos);
+    if (line_end == std::string::npos)
+        line_end = input.size();
+
+    std::string line_str = input.substr(line_start, line_end - line_start);
+    std::cerr << line_str << "\n";
+
+    for (int i = 1; i < tok.column; i++) std::cerr << " ";
+    std::cerr << "^\n";
+
+    throw std::runtime_error("Erro de sintaxe.");
+}
+
+void Parser::semantic_error(const Token &tok, const std::string &msg) {
+    std::cerr << "Erro semântico na linha " << tok.line << ", coluna " << tok.column
+              << ": " << msg << " (encontrado: " << tok.value << ")\n";
+    throw std::runtime_error("Erro semântico.");
+}
+
+void Parser::expect(TokenId expected) {
+    if (current_token.id == expected) {
+        advance();
+    } else {
+        parser_error(current_token, "Token esperado não encontrado");
+    }
+}
+
+bool Parser::check(TokenId id) {
+    return current_token.id == id;
+}
+
+VarType Parser::mapBasicType(TokenId id) {
+    switch (id) {
+        case TOK_INT: return TYPE_INT;
+        case TOK_REAL: return TYPE_REAL;
+        case TOK_BOOL: return TYPE_BOOL;
+        case TOK_STRING: return TYPE_STRING;
+        default: return TYPE_UNKNOWN;
+    }
+}
+
+VarType Parser::parseTypeAndGetVarType() {
+    if (check(TOK_BOOL) || check(TOK_INT) || check(TOK_REAL) || check(TOK_STRING)) {
+        VarType t = mapBasicType(current_token.id);
+        advance();
+        return t;
+    } else if (check(TOK_ARRAY)) {
+        advance();
+        expect(TOK_LBRACKET);
+        parseNumber();
+        expect(TOK_DOT_DOT);
+        parseNumber();
+        expect(TOK_RBRACKET);
+        expect(TOK_OF);
+        VarType elemType = parseTypeAndGetVarType();
+        if (elemType == TYPE_INT) return TYPE_ARRAY_INT;
+        if (elemType == TYPE_REAL) return TYPE_ARRAY_REAL;
+        if (elemType == TYPE_BOOL) return TYPE_ARRAY_BOOL;
+        if (elemType == TYPE_STRING) return TYPE_ARRAY_STRING;
+        return TYPE_UNKNOWN;
+    } else if (check(TOK_STRUCT)) {
+        advance();
+        while (check(TOK_IDENTIFIER)) {
+            parseStructDeclaration();
+        }
+        expect(TOK_END_STRUCT);
+        return TYPE_UNKNOWN;
+    } else {
+        parser_error(current_token, "Tipo inválido");
+        return TYPE_UNKNOWN;
+    }
+}
+
+void Parser::parseStructDeclaration() {
+    expect(TOK_IDENTIFIER);
+    expect(TOK_COLON);
+    parseTypeAndGetVarType();
+    expect(TOK_SEMICOLON);
+}
+
+void Parser::parseValue() {
+    // parseValue é apenas para valores escalares
+    if (check(TOK_INT_LITERAL) || check(TOK_REAL_LITERAL) || check(TOK_STRING_LITERAL) || check(TOK_TRUE) || check(TOK_FALSE)) {
+        advance(); // Apenas consome por agora
+    } else {
+        parser_error(current_token, "Valor inválido na atribuição");
+    }
+}
+
+void Parser::parseNumber() {
+    if (check(TOK_INT_LITERAL) || check(TOK_REAL_LITERAL)) {
+        advance();
+    } else {
+        parser_error(current_token, "Número esperado");
+    }
+}
+
+bool Parser::isVarBlockStart() {
+    return check(TOK_VAR);
+}
+
+bool Parser::isVarDeclarationStart() {
+    return check(TOK_IDENTIFIER);
+}
+
+void Parser::parseVarDeclaration() {
+    Token varName = current_token;
+    expect(TOK_IDENTIFIER);
+    expect(TOK_COLON);
+    VarType varType = parseTypeAndGetVarType();
+
+    bool initialized = false;
+    if (check(TOK_ATRIBUICAO)) {
+        advance(); // consome :=
+        if (check(TOK_LBRACKET)) {
+            // inicialização de array
+            if (varType != TYPE_ARRAY_INT && varType != TYPE_ARRAY_REAL && varType != TYPE_ARRAY_BOOL && varType != TYPE_ARRAY_STRING) {
+                semantic_error(current_token, "Inicialização de array em variável não-array");
+            }
+
+            auto init_values = parseArrayInitializer();
+            // gerar IR para inicialização
+            int index = 1;
+            for (auto &val_rep : init_values) {
+                std::string val = val_rep.first;
+                int rep = val_rep.second;
+                for (int i = 0; i < rep; i++) {
+                    code.push_back("STORE_INDEX " + val + " " + varName.value + " " + std::to_string(index));
+                    index++;
+                }
+            }
+            initialized = true;
+        } else {
+            // inicialização escalar
+            // Precisamos gerar IR
+            Token lit = current_token;
+            if (check(TOK_INT_LITERAL) || check(TOK_REAL_LITERAL) || check(TOK_STRING_LITERAL) || check(TOK_TRUE) || check(TOK_FALSE)) {
+                advance();
+                std::string temp = newTemp();
+                if (lit.id == TOK_INT_LITERAL || lit.id == TOK_REAL_LITERAL) {
+                    code.push_back("LOAD_IMM " + lit.value + " " + temp);
+                } else if (lit.id == TOK_STRING_LITERAL) {
+                    code.push_back("LOAD_IMM \"" + lit.value + "\" " + temp);
+                } else if (lit.id == TOK_TRUE) {
+                    code.push_back("LOAD_IMM 1 " + temp);
+                } else if (lit.id == TOK_FALSE) {
+                    code.push_back("LOAD_IMM 0 " + temp);
+                }
+                code.push_back("STORE " + temp + " " + varName.value);
+                initialized = true;
+            } else {
+                parser_error(current_token, "Valor inválido na atribuição");
+            }
+        }
+    }
+
+    expect(TOK_SEMICOLON);
+    symtab.declareVar(varName.value, varType);
+}
+
+std::vector<std::pair<std::string,int>> Parser::parseArrayInitializer() {
+    std::vector<std::pair<std::string,int>> values;
+    expect(TOK_LBRACKET);
+    if (!check(TOK_RBRACKET)) {
+        do {
+            values.push_back(parseInitValue());
+        } while (check(TOK_COMMA) && (advance(), true));
+    }
+    expect(TOK_RBRACKET);
+    return values;
+}
+
+std::pair<std::string,int> Parser::parseInitValue() {
+    // init_value ::= <expression> [ '(' <number> ')' ]
+    std::string val = parseExpressionToIR();
+    int rep = 1;
+    if (check(TOK_LPAREN)) {
+        advance(); // '('
+        if (!check(TOK_INT_LITERAL)) {
+            parser_error(current_token, "Número esperado após '('");
+        }
+        int count = std::stoi(current_token.value);
+        advance(); // consome numero
+        expect(TOK_RPAREN);
+        rep = count;
+    }
+    return {val, rep};
+}
+
+bool Parser::isInstructionStart() {
+    return check(TOK_IDENTIFIER) || check(TOK_IF);
+}
+
+void Parser::parseInstructions() {
+    while (isInstructionStart()) {
+        parseInstruction();
+    }
+}
+
+void Parser::parseInstruction() {
+    if (check(TOK_IDENTIFIER)) {
+        parseAssignment();
+    } else if (check(TOK_IF)) {
+        parseIfStatement();
+    } else {
+        parser_error(current_token, "Instrução inválida");
+    }
+}
+
+void Parser::parseAssignment() {
+    Token varName = current_token;
+    expect(TOK_IDENTIFIER);
+    if (!symtab.isDeclared(varName.value)) {
+        semantic_error(varName, "Variável não declarada");
+    }
+
+    VarType varType = symtab.getType(varName.value);
+
+    std::vector<std::string> indices;
+    while (check(TOK_LBRACKET)) {
+        if (varType != TYPE_ARRAY_INT && varType != TYPE_ARRAY_REAL && varType != TYPE_ARRAY_BOOL && varType != TYPE_ARRAY_STRING) {
+            semantic_error(current_token, "Acesso a array em variável não-array");
+        }
+
+        advance(); // '['
+        std::string idx = parseExpressionToIR();
+        expect(TOK_RBRACKET);
+
+        if (varType == TYPE_ARRAY_INT) varType = TYPE_INT;
+        else if (varType == TYPE_ARRAY_REAL) varType = TYPE_REAL;
+        else if (varType == TYPE_ARRAY_BOOL) varType = TYPE_BOOL;
+        else if (varType == TYPE_ARRAY_STRING) varType = TYPE_STRING;
+
+        indices.push_back(idx);
+    }
+
+    expect(TOK_ATRIBUICAO);
+    std::string rhs = parseExpressionToIR();
+    expect(TOK_SEMICOLON);
+
+    if (indices.empty()) {
+        code.push_back("STORE " + rhs + " " + varName.value);
+    } else {
+        code.push_back("STORE_INDEX " + rhs + " " + varName.value + " " + indices[0]);
+    }
+}
+
+std::string Parser::parseExpressionToIR() {
+    std::string left = parseTermToIR();
+    while (check(TOK_PLUS) || check(TOK_MINUS)) {
+        Token op = current_token;
+        advance();
+        std::string right = parseTermToIR();
+        std::string temp = newTemp();
+        code.push_back((op.id == TOK_PLUS ? "ADD" : "SUB") + std::string(" ") + left + " " + right + " " + temp);
+        left = temp;
+    }
+    return left;
+}
+
+std::string Parser::parseTermToIR() {
+    std::string left = parseFactorToIR();
+    while (check(TOK_MULTIPLY) || check(TOK_DIVIDE) || check(TOK_MOD)) {
+        Token op = current_token;
+        advance();
+        std::string right = parseFactorToIR();
+        std::string temp = newTemp();
+        std::string instr;
+        if (op.id == TOK_MULTIPLY) instr = "MUL";
+        else if (op.id == TOK_DIVIDE) instr = "DIV";
+        else instr = "MOD";
+        code.push_back(instr + " " + left + " " + right + " " + temp);
+        left = temp;
+    }
+    return left;
+}
+
+std::string Parser::parseFactorToIR() {
+    if (check(TOK_LPAREN)) {
+        advance();
+        std::string res = parseExpressionToIR();
+        expect(TOK_RPAREN);
+        return res;
+    } else if (check(TOK_IDENTIFIER)) {
+        Token varName = current_token;
+        advance();
+        if (!symtab.isDeclared(varName.value)) {
+            semantic_error(varName, "Uso de variável não declarada");
+        }
+
+        VarType varType = symtab.getType(varName.value);
+        std::vector<std::string> indices;
+        while (check(TOK_LBRACKET)) {
+            if (varType != TYPE_ARRAY_INT && varType != TYPE_ARRAY_REAL && varType != TYPE_ARRAY_BOOL && varType != TYPE_ARRAY_STRING) {
+                semantic_error(current_token, "Acesso a array em variável não-array");
+            }
+            advance(); // '['
+            std::string idx = parseExpressionToIR();
+            expect(TOK_RBRACKET);
+
+            if (varType == TYPE_ARRAY_INT) varType = TYPE_INT;
+            else if (varType == TYPE_ARRAY_REAL) varType = TYPE_REAL;
+            else if (varType == TYPE_ARRAY_BOOL) varType = TYPE_BOOL;
+            else if (varType == TYPE_ARRAY_STRING) varType = TYPE_STRING;
+
+            indices.push_back(idx);
+        }
+
+        std::string temp = newTemp();
+        if (indices.empty()) {
+            code.push_back("LOAD " + varName.value + " " + temp);
+        } else {
+            code.push_back("LOAD_INDEX " + varName.value + " " + indices[0] + " " + temp);
+        }
+        return temp;
+    } else if (check(TOK_INT_LITERAL) || check(TOK_REAL_LITERAL)) {
+        Token lit = current_token;
+        advance();
+        std::string temp = newTemp();
+        code.push_back("LOAD_IMM " + lit.value + " " + temp);
+        return temp;
+    } else if (check(TOK_STRING_LITERAL)) {
+        Token lit = current_token;
+        advance();
+        std::string temp = newTemp();
+        code.push_back("LOAD_IMM \"" + lit.value + "\" " + temp);
+        return temp;
+    } else if (check(TOK_TRUE)) {
+        Token lit = current_token;
+        advance();
+        std::string temp = newTemp();
+        code.push_back("LOAD_IMM 1 " + temp);
+        return temp;
+    } else if (check(TOK_FALSE)) {
+        Token lit = current_token;
+        advance();
+        std::string temp = newTemp();
+        code.push_back("LOAD_IMM 0 " + temp);
+        return temp;
+    } else {
+        parser_error(current_token, "Fator inválido");
+        return "";
+    }
+}
+
+void Parser::parseIfStatement() {
+    expect(TOK_IF);
+    std::string cond = parseConditionToIR();
+    expect(TOK_THEN);
+    parseInstructions();
+
+    if (check(TOK_ELSE)) {
+        advance();
+        parseInstructions();
+    }
+
+    expect(TOK_END_IF);
+}
+
+std::string Parser::parseConditionToIR() {
+    // Primeiro parse uma expressão
+    std::string left = parseExpressionToIR();
+
+    // Verifica se o próximo token é um operador relacional
+    if (check(TOK_IGUAL) || check(TOK_DIFERENTE) || check(TOK_MENOR) || check(TOK_MENOR_IGUAL) || check(TOK_MAIOR) || check(TOK_MAIOR_IGUAL)) {
+        // Tem operador relacional, então parseia normalmente
+        Token op = current_token;
+        parseRelationalOperator();
+        std::string right = parseExpressionToIR();
+
+        std::string temp = newTemp();
+        std::string instr;
+        switch (op.id) {
+            case TOK_IGUAL: instr = "COMP_EQ"; break;
+            case TOK_DIFERENTE: instr = "COMP_NE"; break;
+            case TOK_MENOR: instr = "COMP_LT"; break;
+            case TOK_MENOR_IGUAL: instr = "COMP_LE"; break;
+            case TOK_MAIOR: instr = "COMP_GT"; break;
+            case TOK_MAIOR_IGUAL: instr = "COMP_GE"; break;
+            default: instr = "COMP_UNKNOWN"; break;
+        }
+        code.push_back(instr + " " + left + " " + right + " " + temp);
+        return temp;
+    } else {
+        // Não tem operador relacional, a condição é apenas 'left'
+        // Aqui assumimos que 'left' é booleano, idealmente deveria checar se o tipo é booleano.
+        // Como não temos verificação completa de tipo, assumiremos ser válido.
+        return left;
+    }
+}
+
+
+void Parser::parseRelationalOperator() {
+    if (check(TOK_IGUAL) || check(TOK_DIFERENTE) || check(TOK_MENOR) || check(TOK_MENOR_IGUAL) || check(TOK_MAIOR) || check(TOK_MAIOR_IGUAL)) {
+        advance();
+    } else {
+        parser_error(current_token, "Operador relacional esperado");
+    }
+}
+
+void Parser::parseCondition() {
+    parseExpression();
+    parseRelationalOperator();
+    parseExpression();
+}
+
+void Parser::parseExpression() {
+    parseTerm();
+    while (check(TOK_PLUS) || check(TOK_MINUS)) {
+        advance();
+        parseTerm();
+    }
+}
+
+void Parser::parseTerm() {
+    parseFactor();
+    while (check(TOK_MULTIPLY) || check(TOK_DIVIDE) || check(TOK_MOD)) {
+        advance();
+        parseFactor();
+    }
+}
+
+void Parser::parseFactor() {
+    if (check(TOK_LPAREN)) {
+        advance();
+        parseExpression();
+        expect(TOK_RPAREN);
+    } else if (check(TOK_IDENTIFIER)) {
+        advance();
+        while (check(TOK_LBRACKET)) {
+            advance();
+            parseExpression();
+            expect(TOK_RBRACKET);
+        }
+    } else if (check(TOK_INT_LITERAL) || check(TOK_REAL_LITERAL) || check(TOK_STRING_LITERAL) || check(TOK_TRUE) || check(TOK_FALSE)) {
+        advance();
+    } else {
+        parser_error(current_token, "Fator inválido");
+    }
+}
+
+void Parser::parseProgram() {
+    expect(TOK_PROGRAM);
+    expect(TOK_IDENTIFIER);
+    while (isVarBlockStart()) {
+        parseVarBlock();
+    }
+    parseInstructions();
+    expect(TOK_END_PROGRAM);
+}
+
+void Parser::parseVarBlock() {
+    expect(TOK_VAR);
+    while (isVarDeclarationStart()) {
+        parseVarDeclaration();
+    }
+    expect(TOK_END_VAR);
+}
+
+void Parser::parse() {
+    parseProgram();
+    if (current_token.id != TOK_EOF) {
+        parser_error(current_token, "Tokens extras após fim do programa");
+    }
+
+    std::cout << "=== CODE GENERATION (IR) ===\n";
+    for (auto &instr : code) {
+        std::cout << instr << "\n";
+    }
+}
+
+int main(int argc, char **argv) {
+
+    if (argc < 2) {
+        std::cerr << "Uso: " << argv[0] << " <arquivo fonte>\n";
+        return 1;
+    }
+
+    std::ifstream file(argv[1]);
+    if (!file) {
+        std::cerr << "Não foi possível abrir o arquivo: " << argv[1] << "\n";
+        return 1;
+    }
+
+    std::string code((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
     Lexer lexer(code);
     Parser parser(lexer);
 
     try {
         parser.parse();
-        std::cout << "Parsing concluído com sucesso!\n";
+        std::cout << "Parsing, análise semântica e geração de código concluídos com sucesso!\n";
     } catch (const std::exception &e) {
-        std::cerr << "Falha na análise sintática: " << e.what() << "\n";
+        std::cerr << "Falha: " << e.what() << "\n";
     }
 
     return 0;
