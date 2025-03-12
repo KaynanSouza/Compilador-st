@@ -1,0 +1,3 @@
+/home/kaynan/Documentos/Desenvolvimento/C++/Teste-deepseek/cmake-build-debug/CMakeFiles/Teste_deepseek.dir
+/home/kaynan/Documentos/Desenvolvimento/C++/Teste-deepseek/cmake-build-debug/CMakeFiles/edit_cache.dir
+/home/kaynan/Documentos/Desenvolvimento/C++/Teste-deepseek/cmake-build-debug/CMakeFiles/rebuild_cache.dir

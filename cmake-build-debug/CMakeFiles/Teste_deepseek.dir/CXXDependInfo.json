@@ -1,0 +1,18 @@
+{
+	"bmi-installation" : null,
+	"compiler-frontend-variant" : "GNU",
+	"compiler-id" : "GNU",
+	"compiler-simulate-id" : "",
+	"config" : "Debug",
+	"cxx-modules" : {},
+	"dir-cur-bld" : "/home/kaynan/Documentos/Desenvolvimento/C++/Teste-deepseek/cmake-build-debug",
+	"dir-cur-src" : "/home/kaynan/Documentos/Desenvolvimento/C++/Teste-deepseek",
+	"dir-top-bld" : "/home/kaynan/Documentos/Desenvolvimento/C++/Teste-deepseek/cmake-build-debug",
+	"dir-top-src" : "/home/kaynan/Documentos/Desenvolvimento/C++/Teste-deepseek",
+	"exports" : [],
+	"forward-modules-from-target-dirs" : [],
+	"include-dirs" : [],
+	"language" : "CXX",
+	"linked-target-dirs" : [],
+	"module-dir" : "/home/kaynan/Documentos/Desenvolvimento/C++/Teste-deepseek/cmake-build-debug/CMakeFiles/Teste_deepseek.dir"
+}
