@@ -7,11 +7,14 @@
 #include <vector>
 #include <stdexcept>
 #include <fstream>
+#include <sstream>
+#include <map>
+#include <cstdlib>
+#include <cstdint>
 
 // ===================================================================
 // ENUMERAÇÃO DE TIPOS BÁSICOS (VarType)
 // ===================================================================
-// Esses tipos representam os tipos de dados que a linguagem suporta.
 enum VarType {
     TYPE_INT,               // Inteiro
     TYPE_UINT,              // Inteiro sem sinal
@@ -35,8 +38,6 @@ enum VarType {
 // ===================================================================
 // ENUMERAÇÃO DE IDENTIFICADORES DE TOKENS (TokenId)
 // ===================================================================
-// Cada token é representado por um desses valores. Eles incluem
-// palavras-chave, operadores, literais e outros símbolos da linguagem.
 enum TokenId {
     TOK_VAR,                // Início de bloco de variáveis
     TOK_END_VAR,            // Fim de bloco de variáveis
@@ -66,7 +67,7 @@ enum TokenId {
     TOK_DATE_AND_TIME,
     TOK_TIME,
 
-    // Palavras reservadas (literalmente as palavras que não podem ser usadas como identificadores)
+    // Palavras reservadas
     TOK_TRUE,
     TOK_FALSE,
     TOK_LPAREN,             // (
@@ -98,7 +99,6 @@ enum TokenId {
     TOK_MENOR_IGUAL,        // <=
 
     // Operadores lógicos e bitwise
-    // (Usa os mesmos tokens para AND, OR, NOT, XOR)
     TOK_AND,
     TOK_OR,
     TOK_NOT,
@@ -112,16 +112,16 @@ enum TokenId {
     TOK_HEX_LITERAL,
     TOK_OCTAL_LITERAL,
     TOK_BINARY_LITERAL,
-    TOK_IDENTIFIER,         // Identificador (nome de variável, função, etc.)
-    TOK_TIME_LITERAL,       // Literais de tempo (inclui T# e DT#)
+    TOK_IDENTIFIER,
+    TOK_TIME_LITERAL,
 
     // Outros tokens
     TOK_COMMENT,
-    TOK_EOF,                // Fim do arquivo
+    TOK_EOF,
     TOK_INVALID,
     TOK_ERROR,
 
-    // Novas palavras-chave da linguagem
+    // Novas palavras-chave
     TOK_VAR_INPUT,
     TOK_END_VAR_INPUT,
     TOK_VAR_OUTPUT,
@@ -140,7 +140,7 @@ enum TokenId {
     TOK_CASE,
     TOK_END_CASE,
 
-    // Suporte a tipos IEC (estruturas de dados especializadas)
+    // Suporte a tipos IEC
     TOK_TYPE,
     TOK_END_TYPE,
 };
@@ -148,7 +148,6 @@ enum TokenId {
 // ===================================================================
 // FUNÇÃO AUXILIAR token_id_to_string()
 // ===================================================================
-// Converte um TokenId para uma string para facilitar o debug e a exibição.
 std::string token_id_to_string(TokenId id) {
     switch(id) {
         case TOK_VAR: return "TOK_VAR";
@@ -233,7 +232,6 @@ std::string token_id_to_string(TokenId id) {
 // ===================================================================
 // CLASSE Token
 // ===================================================================
-// Representa um token com seu tipo (id), valor (lexema) e posição (linha/coluna).
 class Token {
 public:
     TokenId id;
@@ -241,12 +239,10 @@ public:
     int line;
     int column;
 
-    // Construtor padrão e parametrizado
     Token() : id(TOK_INVALID), value(""), line(0), column(0) {}
     Token(TokenId id, std::string value, int line, int column)
         : id(id), value(std::move(value)), line(line), column(column) {}
 
-    // Método para converter o token em uma string para debug
     std::string to_string() const  {
         return "Token(" + value + ", line: " + std::to_string(line) +
                ", col: " + std::to_string(column) +
@@ -257,26 +253,17 @@ public:
 // ===================================================================
 // CLASSE Lexer
 // ===================================================================
-// Responsável pela análise léxica: converter o código fonte (string)
-// em uma sequência de tokens.
 class Lexer {
 private:
-    std::string input;         // Código fonte completo
-    size_t pos = 0;            // Posição atual no input
-    int current_line = 1;      // Linha atual (para mensagens de erro)
-    int current_column = 1;    // Coluna atual (para mensagens de erro)
+    std::string input;
+    size_t pos = 0;
+    int current_line = 1;
+    int current_column = 1;
 
-    // -------------------------------------------------------------------
-    // Método peek(): retorna o caractere atual (ou '\0' se fim do input)
-    // -------------------------------------------------------------------
     char peek() const {
         return (pos < input.size()) ? input[pos] : '\0';
     }
 
-    // -------------------------------------------------------------------
-    // Método advance(): consome o caractere atual e avança a posição.
-    // Atualiza também a linha e a coluna.
-    // -------------------------------------------------------------------
     char advance() {
         char c = peek();
         if (c != '\0') {
@@ -293,18 +280,12 @@ private:
         return c;
     }
 
-    // -------------------------------------------------------------------
-    // Método skip_whitespace(): ignora espaços em branco e quebras de linha.
-    // -------------------------------------------------------------------
     void skip_whitespace() {
         while (std::isspace((unsigned char)peek())) {
             advance();
         }
     }
 
-    // -------------------------------------------------------------------
-    // Método skip_comment(): ignora comentários no formato (* ... *)
-    // -------------------------------------------------------------------
     void skip_comment() {
         advance(); // Consome '('
         advance(); // Consome '*'
@@ -323,9 +304,6 @@ private:
         }
     }
 
-    // -------------------------------------------------------------------
-    // Método parse_identifier(): lê um identificador (letra ou '_' seguido de alfanuméricos)
-    // -------------------------------------------------------------------
     std::string parse_identifier() {
         std::string ident;
         char first = peek();
@@ -338,10 +316,6 @@ private:
         return ident;
     }
 
-    // -------------------------------------------------------------------
-    // Método classify_keyword(): classifica um identificador como palavra-chave
-    // ou mantém como TOK_IDENTIFIER
-    // -------------------------------------------------------------------
     TokenId classify_keyword(const std::string &ident) {
         static const std::unordered_map<std::string, TokenId> keywords = {
             {"VAR", TOK_VAR}, {"END_VAR", TOK_END_VAR},
@@ -375,9 +349,6 @@ private:
         return (it != keywords.end()) ? it->second : TOK_IDENTIFIER;
     }
 
-    // -------------------------------------------------------------------
-    // Método parse_number(): lê números e trata notação de bases (16#, 8#, 2#)
-    // -------------------------------------------------------------------
     Token parse_number() {
         int start_line = current_line;
         int start_col  = current_column;
@@ -403,7 +374,7 @@ private:
                 num.push_back(advance());
             }
             else if (peek() == '#') {
-                advance(); // Consome '#'
+                advance();
                 if (num == "16") {
                     num.clear();
                     is_hex = true;
@@ -423,7 +394,6 @@ private:
                 num.push_back(advance());
             }
         }
-        // Trata números em base hexadecimal, octal ou binária, se necessário
         if (is_hex) {
             while (std::isxdigit((unsigned char)peek()) || peek() == '_') {
                 if (peek() == '_') { advance(); continue; }
@@ -473,9 +443,6 @@ private:
         }
     }
 
-    // -------------------------------------------------------------------
-    // Método parse_time_literal(): lê literais que começam com "T#"
-    // -------------------------------------------------------------------
     Token parse_time_literal() {
         int start_line = current_line;
         int start_col  = current_column;
@@ -496,9 +463,6 @@ private:
         return Token(TOK_TIME_LITERAL, literal, start_line, start_col);
     }
 
-    // -------------------------------------------------------------------
-    // Método parse_string(): lê uma string delimitada por aspas simples ou duplas
-    // -------------------------------------------------------------------
     Token parse_string(char delimiter) {
         int start_line = current_line;
         int start_col  = current_column;
@@ -519,9 +483,6 @@ private:
         return Token(TOK_STRING_LITERAL, str, start_line, start_col);
     }
 
-    // -------------------------------------------------------------------
-    // Método parse_range_or_dot(): trata o token '.' ou '..'
-    // -------------------------------------------------------------------
     Token parse_range_or_dot() {
         int start_line = current_line;
         int start_col  = current_column;
@@ -534,23 +495,17 @@ private:
     }
 
 public:
-    // Construtor do Lexer: recebe o código fonte como string
     explicit Lexer(std::string code)
         : input(std::move(code)) {}
 
-    // -------------------------------------------------------------------
-    // Método parse_date_time_literal(): lê literais que começam com "DT#"
-    // -------------------------------------------------------------------
     Token parse_date_time_literal() {
         int start_line = current_line;
         int start_col  = current_column;
-        // Consome 'D', 'T' e '#' do literal "DT#"
         advance(); // Consome 'D'
         advance(); // Consome 'T'
         advance(); // Consome '#'
         std::string literal = "DT#";
         bool valid = false;
-        // Aceita dígitos, hífens e dois pontos (formato de data/hora)
         while (std::isdigit((unsigned char)peek()) || peek() == '-' || peek() == ':') {
             literal.push_back(advance());
             valid = true;
@@ -561,9 +516,6 @@ public:
         return Token(TOK_TIME_LITERAL, literal, start_line, start_col);
     }
 
-    // -------------------------------------------------------------------
-    // Método next_token(): principal função do lexer que retorna o próximo token
-    // -------------------------------------------------------------------
     Token next_token() {
         skip_whitespace();
         char c = peek();
@@ -574,16 +526,13 @@ public:
             skip_comment();
             return next_token();
         }
-        // Verifica primeiro se o literal inicia com "DT#"
         if (std::toupper(c) == 'D' && pos + 2 < input.size() &&
             std::toupper(input[pos+1]) == 'T' && input[pos+2] == '#') {
             return parse_date_time_literal();
         }
-        // Depois, verifica se inicia com "T#"
         if ((c == 'T' || c == 't') && pos+1 < input.size() && input[pos+1] == '#') {
             return parse_time_literal();
         }
-        // Verifica se é um identificador
         if (std::isalpha((unsigned char)c) || c == '_') {
             int start_line = current_line;
             int start_col  = current_column;
@@ -594,22 +543,18 @@ public:
             TokenId tid = classify_keyword(ident);
             return Token(tid, ident, start_line, start_col);
         }
-        // Verifica números (incluindo sinal)
         if (std::isdigit((unsigned char)c) || ((c == '-' || c == '+')
             && pos+1 < input.size() && std::isdigit((unsigned char)input[pos+1]))) {
             return parse_number();
         }
-        // Verifica strings
         if (c == '"' || c == '\'') {
             return parse_string(c);
         }
-        // Verifica se é '.' ou '..'
         if (c == '.') {
             return parse_range_or_dot();
         }
         int start_line = current_line;
         int start_col  = current_column;
-        // Processa outros símbolos e operadores
         switch(c) {
             case ':':
                 advance();
@@ -682,8 +627,6 @@ public:
 // ===================================================================
 // CLASSE SymbolTable
 // ===================================================================
-// Essa classe mantém uma tabela de símbolos simples, relacionando nomes
-// de variáveis a seus tipos (VarType).
 class SymbolTable {
 private:
     std::unordered_map<std::string, VarType> table;
@@ -704,8 +647,6 @@ public:
 // ===================================================================
 // Estrutura para armazenar informações de tipos (UserTypeInfo)
 // ===================================================================
-// Essa estrutura é usada para definir tipos de usuário (por exemplo, tipos
-// derivados, estruturas, arrays, subranges, etc.).
 enum UserTypeKind {
     UTYPE_BASE,
     UTYPE_ENUM,
@@ -729,21 +670,18 @@ struct UserTypeInfo {
     long arrayLow;
     long arrayHigh;
     std::string arrayElementType;
-    // Campos de uma struct
     struct Field {
         std::string name;
         std::string type;
         std::string initValue;
     };
     std::vector<Field> structFields;
-    // Inicializações para tipos derivados
     std::vector<std::pair<std::string, std::string>> derivedInits;
 };
 
 // ===================================================================
 // CLASSE TypeTable
 // ===================================================================
-// Tabela que mantém os tipos definidos pelo usuário.
 class TypeTable {
 public:
     std::unordered_map<std::string, UserTypeInfo> types;
@@ -763,17 +701,14 @@ public:
 // ===================================================================
 // CLASSE Parser
 // ===================================================================
-// Essa classe é responsável por analisar a sequência de tokens (gerada pelo Lexer),
-// realizar a análise sintática (e semântica) e gerar um código intermediário (IR).
 class Parser {
-private:
+protected:
     Lexer &lexer;
     Token current_token;
     SymbolTable symtab;
     TypeTable typetab;
-    std::vector<std::string> code;  // Código intermediário gerado
+    std::vector<std::string> code;  // Código intermediário (IR)
 
-    // Métodos de parsing de alto nível:
     void parseProgram();
     void parseVarBlock();
     bool isVarBlockStart();
@@ -789,14 +724,12 @@ private:
     void parseInstruction();
     void parseAssignment();
 
-    // Métodos para gerar IR a partir de expressões:
     std::string parseExpressionToIR();
     std::string parseTermToIR();
     std::string parseFactorToIR();
     std::string parseParenExpressionToIR();
-    std::string parseBitwiseExpressionToIR(); // Para tratar operadores bitwise
+    std::string parseBitwiseExpressionToIR();
 
-    // Métodos para parsing de condições e comparações:
     void parseIfStatement();
     void parseCaseStatement();
     void parseForStatement();
@@ -810,39 +743,29 @@ private:
     void parseTerm();
     void parseFactor();
 
-    // Métodos para inicializadores de arrays:
     std::vector<std::pair<std::string,int>> parseArrayInitializer();
     std::pair<std::string,int> parseInitValue();
 
-    // Suporte para declaração de tipos pelo usuário:
     void parseTypeBlock();
     void parseTypeDeclaration();
 
-    // Métodos auxiliares para validação e avanço de tokens:
     void expect(TokenId expected);
     bool check(TokenId id);
     void advance();
     void parser_error(const Token &tok, const std::string &msg);
     void semantic_error(const Token &tok, const std::string &msg);
 
-    // Gera um novo temporário para o IR (por exemplo, t1, t2, etc.)
     std::string newTemp() {
         static int temp_count = 0;
         return "t" + std::to_string(++temp_count);
     }
-
 public:
-    // Construtor do Parser: recebe o lexer e pré-declara a variável DT (data/hora)
     explicit Parser(Lexer &l) : lexer(l) {
         current_token = lexer.next_token();
         symtab.declareVar("DT", TYPE_DATE_AND_TIME);
     }
-    void parse();
+    virtual void parse();
 };
-
-// ===================================================================
-// IMPLEMENTAÇÃO DOS MÉTODOS DO PARSER
-// ===================================================================
 
 void Parser::advance() {
     current_token = lexer.next_token();
@@ -898,7 +821,6 @@ VarType Parser::mapBasicType(TokenId id) {
 }
 
 VarType Parser::parseTypeAndGetVarType() {
-    // Processa tipos simples (STRING, TIME, etc.)
     if (check(TOK_STRING)) {
         VarType t = TYPE_STRING;
         advance();
@@ -926,7 +848,6 @@ VarType Parser::parseTypeAndGetVarType() {
         return t;
     }
     else if (check(TOK_ARRAY)) {
-        // Processa declaração de array
         advance();
         expect(TOK_LBRACKET);
         parseNumber();
@@ -943,7 +864,6 @@ VarType Parser::parseTypeAndGetVarType() {
         return TYPE_UNKNOWN;
     }
     else if (check(TOK_STRUCT)) {
-        // Processa declaração de struct
         advance();
         while (check(TOK_IDENTIFIER)) {
             parseStructDeclaration();
@@ -958,7 +878,6 @@ VarType Parser::parseTypeAndGetVarType() {
 }
 
 void Parser::parseStructDeclaration() {
-    // Lê o nome do campo e seu tipo
     expect(TOK_IDENTIFIER);
     expect(TOK_COLON);
     parseTypeAndGetVarType();
@@ -966,7 +885,6 @@ void Parser::parseStructDeclaration() {
 }
 
 void Parser::parseValue() {
-    // Valida um valor literal (número, string, etc.)
     if (check(TOK_INT_LITERAL) || check(TOK_REAL_LITERAL) ||
         check(TOK_HEX_LITERAL) || check(TOK_STRING_LITERAL) ||
         check(TOK_TRUE) || check(TOK_FALSE) ||
@@ -980,7 +898,6 @@ void Parser::parseValue() {
 }
 
 void Parser::parseNumber() {
-    // Verifica se o token atual é um número
     if (check(TOK_INT_LITERAL) || check(TOK_REAL_LITERAL) || check(TOK_HEX_LITERAL)
      || check(TOK_OCTAL_LITERAL) || check(TOK_BINARY_LITERAL)) {
         advance();
@@ -998,7 +915,6 @@ bool Parser::isVarDeclarationStart() {
 }
 
 void Parser::parseVarDeclaration(bool isConstBlock, bool isRetainBlock) {
-    // Processa declaração de variável
     Token varName = current_token;
     expect(TOK_IDENTIFIER);
     expect(TOK_COLON);
@@ -1033,7 +949,6 @@ void Parser::parseVarDeclaration(bool isConstBlock, bool isRetainBlock) {
 }
 
 std::vector<std::pair<std::string,int>> Parser::parseArrayInitializer() {
-    // Processa o inicializador de array: [val, val, ...]
     std::vector<std::pair<std::string,int>> values;
     expect(TOK_LBRACKET);
     if (!check(TOK_RBRACKET)) {
@@ -1046,7 +961,6 @@ std::vector<std::pair<std::string,int>> Parser::parseArrayInitializer() {
 }
 
 std::pair<std::string,int> Parser::parseInitValue() {
-    // Processa cada valor individual do inicializador de array
     std::string val = parseExpressionToIR();
     int rep = 1;
     if (check(TOK_LPAREN)) {
@@ -1063,7 +977,6 @@ std::pair<std::string,int> Parser::parseInitValue() {
 }
 
 bool Parser::isInstructionStart() {
-    // Verifica se o token atual pode iniciar uma instrução
     return check(TOK_IDENTIFIER)
         || check(TOK_IF)
         || check(TOK_FOR)
@@ -1073,14 +986,12 @@ bool Parser::isInstructionStart() {
 }
 
 void Parser::parseInstructions() {
-    // Loop para processar instruções enquanto houver
     while (isInstructionStart()) {
         parseInstruction();
     }
 }
 
 void Parser::parseInstruction() {
-    // Decide qual instrução processar com base no token atual
     if (check(TOK_IDENTIFIER)) {
         parseAssignment();
     }
@@ -1104,12 +1015,7 @@ void Parser::parseInstruction() {
     }
 }
 
-// ===================================================================
-// Métodos para gerar código intermediário (IR) a partir de expressões
-// ===================================================================
-
 std::string Parser::parseBitwiseExpressionToIR() {
-    // Trata expressões com operadores bitwise, como AND, OR e NOT
     if (check(TOK_NOT)) {
         advance();
         std::string operand = parseBitwiseExpressionToIR();
@@ -1134,11 +1040,9 @@ std::string Parser::parseBitwiseExpressionToIR() {
 }
 
 void Parser::parseAssignment() {
-    // Processa uma atribuição, por exemplo: x := 10;
     Token varName = current_token;
     expect(TOK_IDENTIFIER);
     std::vector<std::string> indices;
-    // Trata acesso a arrays, se houver colchetes
     while (check(TOK_LBRACKET)) {
         advance();
         std::string idxIR = parseExpressionToIR();
@@ -1146,7 +1050,6 @@ void Parser::parseAssignment() {
         indices.push_back(idxIR);
     }
     expect(TOK_ATRIBUICAO);
-    // Usa a função para processar expressões que podem ter operadores bitwise
     std::string rhs = parseBitwiseExpressionToIR();
     expect(TOK_SEMICOLON);
     if (indices.empty()) {
@@ -1157,7 +1060,6 @@ void Parser::parseAssignment() {
 }
 
 std::string Parser::parseExpressionToIR() {
-    // Processa expressões aritméticas: chama parseTermToIR e trata '+' e '-' entre termos.
     std::string left = parseTermToIR();
     while (check(TOK_PLUS) || check(TOK_MINUS)) {
         Token op = current_token;
@@ -1171,10 +1073,8 @@ std::string Parser::parseExpressionToIR() {
 }
 
 std::string Parser::parseTermToIR() {
-    // Processa termos: chama parseFactorToIR e trata '*' '/' ou 'MOD'
     std::string left = parseFactorToIR();
     if (check(TOK_TIME_LITERAL)) {
-        // Caso especial: se encontrar um literal de tempo (T# ou DT#)
         Token lit = current_token;
         advance();
         std::string temp = newTemp();
@@ -1193,19 +1093,14 @@ std::string Parser::parseTermToIR() {
     return left;
 }
 
-// -------------------------------------------------------------------
-// Método parseParenExpressionToIR(): processa expressões entre parênteses,
-// tratando também comparações (operadores relacionais).
-// -------------------------------------------------------------------
 std::string Parser::parseParenExpressionToIR() {
-    expect(TOK_LPAREN); // Consome '('
+    expect(TOK_LPAREN);
     std::string left = parseExpressionToIR();
-    // Se houver operadores relacionais, processa a comparação
     while (check(TOK_IGUAL) || check(TOK_DIFERENTE) ||
            check(TOK_MENOR) || check(TOK_MENOR_IGUAL) ||
            check(TOK_MAIOR) || check(TOK_MAIOR_IGUAL)) {
         Token op = current_token;
-        advance(); // Consome o operador relacional
+        advance();
         std::string right = parseExpressionToIR();
         std::string temp = newTemp();
         std::string instr;
@@ -1221,14 +1116,10 @@ std::string Parser::parseParenExpressionToIR() {
         code.push_back(instr + " " + left + " " + right + " " + temp);
         left = temp;
     }
-    expect(TOK_RPAREN); // Consome ')'
+    expect(TOK_RPAREN);
     return left;
 }
 
-// -------------------------------------------------------------------
-// Método parseFactorToIR(): processa o menor componente (fator) de uma expressão.
-// Aqui é onde adicionamos o tratamento para TOK_TIME_LITERAL (que inclui T# e DT#)
-// -------------------------------------------------------------------
 std::string Parser::parseFactorToIR() {
     if (check(TOK_LPAREN)) {
         return parseParenExpressionToIR();
@@ -1263,7 +1154,6 @@ std::string Parser::parseFactorToIR() {
         }
         return temp;
     }
-    // Tratamento para literais de tempo (TOK_TIME_LITERAL) – cobre T# e DT#
     else if (check(TOK_TIME_LITERAL)) {
         Token lit = current_token;
         advance();
@@ -1306,10 +1196,6 @@ std::string Parser::parseFactorToIR() {
     }
 }
 
-// ===================================================================
-// Métodos para estruturas de controle (loops, condições)
-// ===================================================================
-
 void Parser::parseForStatement() {
     expect(TOK_FOR);
     if (!check(TOK_IDENTIFIER)) {
@@ -1340,11 +1226,11 @@ void Parser::parseWhileStatement() {
 }
 
 void Parser::parseRepeatStatement() {
-    expect(TOK_REPEAT); // Consome o REPEAT
+    expect(TOK_REPEAT);
     while (!check(TOK_UNTIL)) {
         parseInstruction();
     }
-    expect(TOK_UNTIL); // Consome o UNTIL
+    expect(TOK_UNTIL);
     std::string cond = parseConditionToIR();
     expect(TOK_END_REPEAT);
     code.push_back("REPEAT_LOOP " + cond);
@@ -1355,9 +1241,8 @@ void Parser::parseIfStatement() {
     std::string cond = parseConditionToIR();
     expect(TOK_THEN);
     parseInstructions();
-    // Suporta cláusulas ELSIF
     while (check(TOK_ELSIF)) {
-         advance(); // Consome 'ELSIF'
+         advance();
          std::string elsifCond = parseConditionToIR();
          expect(TOK_THEN);
          parseInstructions();
@@ -1396,10 +1281,6 @@ void Parser::parseCaseStatement() {
     }
     expect(TOK_END_CASE);
 }
-
-// ===================================================================
-// Métodos para processar comparações e condições
-// ===================================================================
 
 std::string Parser::parseComparisonToIR() {
     std::string left = parseTermToIR();
@@ -1502,9 +1383,6 @@ void Parser::parseFactor() {
     }
 }
 
-// ===================================================================
-// Método parseProgram(): ponto de entrada do parsing do programa
-// ===================================================================
 void Parser::parseProgram() {
     expect(TOK_PROGRAM);
     expect(TOK_IDENTIFIER);
@@ -1741,6 +1619,198 @@ void Parser::parse() {
     }
 }
 
+// ===================================================================
+// NOVAS FUNÇÕES: Otimização de IR e Geração de Código Objeto
+// ===================================================================
+
+bool isNumber(const std::string& s) {
+    char* end;
+    std::strtod(s.c_str(), &end);
+    return end != s.c_str() && *end == '\0';
+}
+
+std::vector<std::string> optimizeIR(const std::vector<std::string>& ir) {
+    std::vector<std::string> optimized;
+    std::map<std::string, double> constants;
+
+    for (const auto &instr : ir) {
+        std::istringstream iss(instr);
+        std::vector<std::string> tokens;
+        std::string token;
+        while (iss >> token) {
+            tokens.push_back(token);
+        }
+        if (tokens.empty()) continue;
+
+        if (tokens[0] == "LOAD_IMM") {
+            if (tokens.size() == 3 && isNumber(tokens[1])) {
+                constants[tokens[2]] = std::stod(tokens[1]);
+            }
+            optimized.push_back(instr);
+        }
+        else if (tokens[0] == "ADD" || tokens[0] == "SUB" ||
+                 tokens[0] == "MUL" || tokens[0] == "DIV" || tokens[0] == "MOD") {
+            if (tokens.size() == 4) {
+                double leftVal = 0, rightVal = 0;
+                bool leftConst = false, rightConst = false;
+                if (isNumber(tokens[1])) {
+                    leftVal = std::stod(tokens[1]);
+                    leftConst = true;
+                } else if (constants.find(tokens[1]) != constants.end()) {
+                    leftVal = constants[tokens[1]];
+                    leftConst = true;
+                }
+                if (isNumber(tokens[2])) {
+                    rightVal = std::stod(tokens[2]);
+                    rightConst = true;
+                } else if (constants.find(tokens[2]) != constants.end()) {
+                    rightVal = constants[tokens[2]];
+                    rightConst = true;
+                }
+                if (leftConst && rightConst) {
+                    double result = 0;
+                    if (tokens[0] == "ADD") result = leftVal + rightVal;
+                    else if (tokens[0] == "SUB") result = leftVal - rightVal;
+                    else if (tokens[0] == "MUL") result = leftVal * rightVal;
+                    else if (tokens[0] == "DIV") {
+                        if (rightVal == 0) {
+                            optimized.push_back(instr);
+                            continue;
+                        }
+                        result = leftVal / rightVal;
+                    }
+                    else if (tokens[0] == "MOD") {
+                        result = std::fmod(leftVal, rightVal);
+                    }
+                    std::ostringstream oss;
+                    oss << "LOAD_IMM " << result << " " << tokens[3];
+                    std::string newInstr = oss.str();
+                    optimized.push_back(newInstr);
+                    constants[tokens[3]] = result;
+                    continue;
+                } else {
+                    constants.erase(tokens[3]);
+                }
+            }
+            optimized.push_back(instr);
+        }
+        else {
+            optimized.push_back(instr);
+        }
+    }
+    return optimized;
+}
+
+std::vector<std::string> generateObjectCode(const std::vector<std::string>& optimizedIR) {
+    std::vector<std::string> obj;
+    for (const auto &instr : optimizedIR) {
+        std::istringstream iss(instr);
+        std::vector<std::string> tokens;
+        std::string token;
+        while (iss >> token) {
+            tokens.push_back(token);
+        }
+        if (tokens.empty()) continue;
+        std::string opcode = "OBJ_" + tokens[0];
+        std::ostringstream oss;
+        oss << opcode;
+        for (size_t i = 1; i < tokens.size(); i++) {
+            oss << " " << tokens[i];
+        }
+        obj.push_back(oss.str());
+    }
+    return obj;
+}
+
+// ===================================================================
+// NOVA ETAPA: Geração de Código Final em BINÁRIO
+// ===================================================================
+//
+// Nesta etapa, convertemos o código objeto (texto) em um vetor de bytes
+// que representa um formato binário simples. Cada instrução é codificada
+// como:
+//   [opcode (1 byte)] [para cada operando: tamanho (1 byte) seguido dos caracteres] [0x00 (delimitador)]
+//
+std::vector<uint8_t> generateBinaryCode(const std::vector<std::string>& objectCode) {
+    std::vector<uint8_t> binary;
+    for (const auto &line : objectCode) {
+        std::istringstream iss(line);
+        std::string opcode;
+        iss >> opcode;
+        uint8_t opByte = 0;
+        // Se o opcode for "OBJ_LOAD_IMM", define o código de operação como 0x01
+        if (opcode == "OBJ_LOAD_IMM") opByte = 0x01;  
+        // Se o opcode for "OBJ_STORE", define o código de operação como 0x02
+        else if (opcode == "OBJ_STORE") opByte = 0x02;  
+        // Se o opcode for "OBJ_LOAD", define o código de operação como 0x03
+        else if (opcode == "OBJ_LOAD") opByte = 0x03;  
+        // Se o opcode for "OBJ_LOAD_INDEX", define o código de operação como 0x04 (carrega com indexação)
+        else if (opcode == "OBJ_LOAD_INDEX") opByte = 0x04;  
+        // Se o opcode for "OBJ_ADD", define o código de operação como 0x05 (operação de adição)
+        else if (opcode == "OBJ_ADD") opByte = 0x05;  
+        // Se o opcode for "OBJ_SUB", define o código de operação como 0x06 (operação de subtração)
+        else if (opcode == "OBJ_SUB") opByte = 0x06;  
+        // Se o opcode for "OBJ_MUL", define o código de operação como 0x07 (operação de multiplicação)
+        else if (opcode == "OBJ_MUL") opByte = 0x07;  
+        // Se o opcode for "OBJ_DIV", define o código de operação como 0x08 (operação de divisão)
+        else if (opcode == "OBJ_DIV") opByte = 0x08;  
+        // Se o opcode for "OBJ_MOD", define o código de operação como 0x09 (calcula o módulo ou resto da divisão)
+        else if (opcode == "OBJ_MOD") opByte = 0x09;  
+        // Se o opcode for "OBJ_BITWISE_NOT", define o código de operação como 0x0A (inversão dos bits)
+        else if (opcode == "OBJ_BITWISE_NOT") opByte = 0x0A;  
+        // Se o opcode for "OBJ_BITWISE_AND", define o código de operação como 0x0B (AND bit a bit)
+        else if (opcode == "OBJ_BITWISE_AND") opByte = 0x0B;  
+        // Se o opcode for "OBJ_BITWISE_OR", define o código de operação como 0x0C (OR bit a bit)
+        else if (opcode == "OBJ_BITWISE_OR") opByte = 0x0C;  
+        // Se o opcode for "OBJ_COMP_EQ", define o código de operação como 0x0D (compara se é igual)
+        else if (opcode == "OBJ_COMP_EQ") opByte = 0x0D;  
+        // Se o opcode for "OBJ_COMP_NE", define o código de operação como 0x0E (compara se é diferente)
+        else if (opcode == "OBJ_COMP_NE") opByte = 0x0E;  
+        // Se o opcode for "OBJ_COMP_LT", define o código de operação como 0x0F (compara se é menor que)
+        else if (opcode == "OBJ_COMP_LT") opByte = 0x0F;  
+        // Se o opcode for "OBJ_COMP_LE", define o código de operação como 0x10 (compara se é menor ou igual)
+        else if (opcode == "OBJ_COMP_LE") opByte = 0x10;  
+        // Se o opcode for "OBJ_COMP_GT", define o código de operação como 0x11 (compara se é maior que)
+        else if (opcode == "OBJ_COMP_GT") opByte = 0x11;  
+        // Se o opcode for "OBJ_COMP_GE", define o código de operação como 0x12 (compara se é maior ou igual)
+        else if (opcode == "OBJ_COMP_GE") opByte = 0x12;  
+        // Se o opcode for "OBJ_LOGICAL_NOT", define o código de operação como 0x13 (negação lógica)
+        else if (opcode == "OBJ_LOGICAL_NOT") opByte = 0x13;  
+        // Se o opcode for "OBJ_LOGICAL_AND", define o código de operação como 0x14 (AND lógico)
+        else if (opcode == "OBJ_LOGICAL_AND") opByte = 0x14;  
+        // Se o opcode for "OBJ_LOGICAL_OR", define o código de operação como 0x15 (OR lógico)
+        else if (opcode == "OBJ_LOGICAL_OR") opByte = 0x15;  
+        // Se o opcode for "OBJ_REPEAT_LOOP", define o código de operação como 0x16 (inicia um loop de repetição)
+        else if (opcode == "OBJ_REPEAT_LOOP") opByte = 0x16;
+        binary.push_back(opByte);
+        std::string operand;
+        while (iss >> operand) {
+            uint8_t len = operand.size();
+            binary.push_back(len);
+            for (char c : operand) {
+                binary.push_back(static_cast<uint8_t>(c));
+            }
+        }
+        // Delimitador de instrução
+        binary.push_back(0x00);
+    }
+    return binary;
+}
+
+// ===================================================================
+// CLASSE ExtendedParser (para acesso ao IR)
+// ===================================================================
+class ExtendedParser : public Parser {
+public:
+    using Parser::Parser;
+    const std::vector<std::string>& getIR() const {
+        return code;
+    }
+};
+
+// ===================================================================
+// MAIN: Integra todas as etapas do compilador
+// ===================================================================
 int main(int argc, char **argv) {
     std::string nomeArquivo = (argc > 1) ? argv[1]
                                          : "/home/kaynan/Documentos/Desenvolvimento/C++/Compilador-st-am/teste-1.st";
@@ -1749,9 +1819,11 @@ int main(int argc, char **argv) {
         std::cerr << "Não foi possível abrir o arquivo: " << nomeArquivo << "\n";
         return 1;
     }
-    std::string code((std::istreambuf_iterator<char>(file)),
-                     std::istreambuf_iterator<char>());
-    Lexer lexer(code);
+    std::string codeStr((std::istreambuf_iterator<char>(file)),
+                         std::istreambuf_iterator<char>());
+
+    // Etapa de análise léxica: exibe os tokens
+    Lexer lexer(codeStr);
     {
         Token token = lexer.next_token();
         while (token.id != TOK_EOF) {
@@ -1759,14 +1831,49 @@ int main(int argc, char **argv) {
             token = lexer.next_token();
         }
     }
-    Lexer lexer2(code);
-    Parser parser(lexer2);
+
+    // Análise sintática, semântica e geração de IR
+    Lexer lexer2(codeStr);
+    ExtendedParser parser(lexer2);
     try {
         parser.parse();
-        std::cout << "Parsing, análise semântica e geração de código concluídos com sucesso!\n";
+        std::cout << "Parsing, análise semântica e geração de código (IR) concluídos com sucesso!\n";
     } catch (const std::exception &e) {
         std::cerr << "Falha: " << e.what() << "\n";
         return 1;
     }
+
+    // Exibe o IR gerado
+    const auto& ir = parser.getIR();
+    std::cout << "\n=== CODE GENERATION (IR) ===\n";
+    for (const auto &instr : ir) {
+        std::cout << instr << "\n";
+    }
+
+    // Otimização do IR
+    std::vector<std::string> optimizedIR = optimizeIR(ir);
+    std::cout << "\n=== OPTIMIZED IR ===\n";
+    for (const auto &instr : optimizedIR) {
+        std::cout << instr << "\n";
+    }
+
+    // Geração de Código Objeto
+    std::vector<std::string> objectCode = generateObjectCode(optimizedIR);
+    std::cout << "\n=== OBJECT CODE ===\n";
+    for (const auto &instr : objectCode) {
+        std::cout << instr << "\n";
+    }
+
+    // Geração do Código Final em BINÁRIO
+    std::vector<uint8_t> binaryCode = generateBinaryCode(objectCode);
+    std::ofstream binFile("final.bin", std::ios::binary);
+    if (!binFile) {
+        std::cerr << "Não foi possível criar o arquivo binário.\n";
+        return 1;
+    }
+    binFile.write(reinterpret_cast<const char*>(binaryCode.data()), binaryCode.size());
+    binFile.close();
+    std::cout << "\nCódigo final em binário gerado com sucesso e salvo em 'final.bin'.\n";
+
     return 0;
 }
