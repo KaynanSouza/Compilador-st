@@ -25,7 +25,7 @@ enum VarType {
     TYPE_DATE_AND_TIME,     // Data e hora
     TYPE_DWORD,             // DWORD (double word)
     TYPE_TIME,              // Tempo
-    // Arrays de básicos
+    // Arrays de tipos basicos
     TYPE_ARRAY_INT,
     TYPE_ARRAY_UINT,
     TYPE_ARRAY_REAL,
